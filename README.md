@@ -9,5 +9,8 @@ WordPress plugin to import posts into the event calendar. Used for one-time data
 
 ## Changelog ##
 
+### v1.0.1 (11/25/2019) ###
+* Added image processing. If the content has an image, then the url image is processed. The resulting image is added to the media on the site and, if successful, the url is replaced with a new value.
+
 ### v1.0.0 (11/25/2019) ###
 * First release.

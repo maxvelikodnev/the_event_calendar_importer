@@ -4,7 +4,7 @@
  * Plugin URI: https://github.com/maxvelikodnev/the_event_calendar_importer
  * Description: WordPress plugin to import posts into the event calendar. Used
  * for one-time data import (excluding verification of existing records)
- * Version: 1.0.0 Author: Max Velikodnev Author URI:
+ * Version: 1.0.1 Author: Max Velikodnev Author URI:
  * https://github.com/maxvelikodnev/ License: GNU General Public License v3.0
  * License URI: http://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -33,9 +33,13 @@ $import_filename = "import.xlsx";
 /***********************************************************************/
 
 require_once( plugin_dir_path( __FILE__ ) . 'vendor/autoload.php' );
+require_once ABSPATH . 'wp-admin/includes/media.php';
+require_once ABSPATH . 'wp-admin/includes/file.php';
+require_once ABSPATH . 'wp-admin/includes/image.php';
 
 use PhpOffice\PhpSpreadsheet\Reader\Xlsx;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use Sunra\PhpSimple\HtmlDomParser;
 
 
 add_action( 'admin_menu', 'register_the_event_calendar_importer' );
@@ -54,6 +58,9 @@ function the_event_calendar_importer() {
 		global $import_filename;
 
 		if ( isset( $_POST['action'] ) ) {
+
+			echo "<h2>Getting started...</h2>\n";
+			flush();
 
 			$post_author = get_current_user_id();
 
@@ -76,13 +83,79 @@ function the_event_calendar_importer() {
 			$counter = 0;
 			echo "<pre>";
 			for ( $iRow = 1; $iRow <= $oCells->getHighestRow(); $iRow ++ ) {
-				$title     = wp_strip_all_tags( $oCells->get( 'A' . $iRow ) );
+				$err     = 0;
+				$title   = wp_strip_all_tags( $oCells->get( 'A' . $iRow ) );
+				$title   = preg_replace( '/\t/', '', $title );
+				$content = $oCells->get( 'C' . $iRow ) . " " . $oCells->get( 'D' . $iRow );
+
+				echo "<b>Add Event:</b> " . $title . "\n";
+				flush();
+
+				//Image processing
+				$imgs = [];
+				$dom  = HtmlDomParser::str_get_html( $content );
+				foreach ( $dom->find( 'img' ) as $element ) {
+					$imgs[] = $element->src;
+				}
+
+				$imgs       = array_unique( $imgs );
+				$uploadPath = wp_get_upload_dir();
+				foreach ( $imgs as $k => $url ) {
+					$parseUrl = parse_url( $url );
+
+					if ( isset( $parseUrl['scheme'] ) && isset( $parseUrl['host'] ) ) {
+
+						echo "<b>Trying to download an image:</b> " . $url;
+						flush();
+
+						$tmp = download_url( $url );
+
+						if ( is_wp_error( $tmp ) ) {
+							$err ++;
+							$error = $tmp->get_error_messages();
+							echo the_event_calendar_importer_msg( " (" . $error[0] . ")", 'err' );
+							flush();
+						} else {
+							echo the_event_calendar_importer_msg( " (Ok)" );
+						}
+						echo PHP_EOL;
+
+						if ( ! $err ) {
+							$file_array = [
+								'name'     => basename( $url ),
+								'tmp_name' => $tmp,
+								'error'    => 0,
+								'size'     => filesize( $tmp ),
+							];
+
+							$attachment_id = media_handle_sideload( $file_array, 0 );
+
+							//If an error occurs
+							if ( is_wp_error( $attachment_id ) ) {
+								@unlink( $file_array['tmp_name'] );
+								$err ++;
+								$error = $attachment_id->get_error_messages();
+								echo "An error has occurred:" . $error[0] . "\n";
+								flush();
+							}
+
+							@unlink( $tmp );
+
+							//Get the image url by id and replace the original url to new in the content
+							$img_url = wp_get_attachment_image_src( $attachment_id, 'full' );
+							$content = str_replace( $url, $img_url[0], $content );
+						}
+					}
+
+				}
+
+
 				$post_data = [
 					'post_title'   => $title,
-					'post_content' => $oCells->get( 'C' . $iRow ) . " " . $oCells->get( 'D' . $iRow ),
+					'post_content' => $content,
 					'post_status'  => 'publish',
 					'post_author'  => $post_author,
-					'post_date'    => $oCells->get( 'B' . $iRow ),
+					'post_date'    => $oCells->get( 'B' . $iRow )->getValue(),
 					'post_type'    => "tribe_events",
 					//			        'post_category' => array( 8,39 )
 				];
@@ -114,10 +187,16 @@ function the_event_calendar_importer() {
 
 				$counter ++;
 
-				echo wp_strip_all_tags( $oCells->get( 'A' . $iRow ) ) . " - <b>Ok</b>\n";
+				if ( $err ) {
+					echo the_event_calendar_importer_msg( "An event has been added, but images that could not be downloaded use the original url.\n", 'err' );
+				} else {
+					echo the_event_calendar_importer_msg( "Event added\n" );
+				}
+				echo "<hr/>\n";
+
 				flush();
 			}
-			echo "Imported " . $counter . " record(s)\n";
+			echo "<h2>Imported <b>" . $counter . "</b> record(s)</h2>\n";
 			echo "</pre>";
 		}
 		?>
@@ -128,7 +207,7 @@ function the_event_calendar_importer() {
 
 			if ( file_exists( plugin_dir_path( __FILE__ ) . $import_filename ) ) {
 
-				settings_fields( "import" );     // скрытые защитные поля
+				settings_fields( "import" );
 				submit_button( 'Import now' );
 			} else {
 				echo "Import is not available. The import.xlsx file in the plugin folder is missing.";
@@ -138,6 +217,19 @@ function the_event_calendar_importer() {
     </div>
 
 	<?php
+}
+
+function the_event_calendar_importer_msg( $message, $type = "ok" ) {
+	$style = "";
+	switch ( $type ) {
+		case "err":
+			$style = "color: red;";
+			break;
+		default:
+			$style = "color: green;";
+	}
+
+	return '<span style="' . $style . '">' . $message . '</span>';
 }
 
 ?>
