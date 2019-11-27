@@ -26,9 +26,11 @@
  * ----------------------------------------------------------------------
  */
 error_reporting( E_ALL );
-ini_set( 'display_errors', 'On' );
+@set_time_limit( 0 );
+@ini_set( 'upload_max_size', '20M' );
+@ini_set( 'post_max_size', '20M' );
+@ini_set( 'display_errors', 'On' );
 $import_filename = "import.xlsx";
-
 
 /***********************************************************************/
 
@@ -39,7 +41,7 @@ require_once ABSPATH . 'wp-admin/includes/image.php';
 
 use PhpOffice\PhpSpreadsheet\Reader\Xlsx;
 use PhpOffice\PhpSpreadsheet\IOFactory;
-use Sunra\PhpSimple\HtmlDomParser;
+use KubAT\PhpSimple\HtmlDomParser;
 
 
 add_action( 'admin_menu', 'register_the_event_calendar_importer' );
@@ -101,7 +103,7 @@ function the_event_calendar_importer() {
 				$imgs       = array_unique( $imgs );
 				$uploadPath = wp_get_upload_dir();
 				foreach ( $imgs as $k => $url ) {
-					$url = str_replace("http://wacl.info/", "https://wacl.wildpress.dev/", $url);
+					$url      = preg_replace( "|http://wacl.info/|is", "https://wacl.wildpress.dev/", $url );
 					$parseUrl = parse_url( $url );
 
 					if ( isset( $parseUrl['scheme'] ) && isset( $parseUrl['host'] ) ) {
@@ -109,7 +111,7 @@ function the_event_calendar_importer() {
 						echo "<b>Trying to download an image:</b> " . $url;
 						flush();
 
-						$tmp = download_url( $url );
+						$tmp = the_event_calendar_importer_download( $url );
 
 						if ( is_wp_error( $tmp ) ) {
 							$err ++;
@@ -144,7 +146,7 @@ function the_event_calendar_importer() {
 
 							//Get the image url by id and replace the original url to new in the content
 							$img_url = wp_get_attachment_image_src( $attachment_id, 'full' );
-							$content = str_replace( $url, $img_url[0], $content );
+							$content = preg_replace( "|".$url."|is", $img_url[0], $content );
 						}
 					}
 
@@ -165,7 +167,7 @@ function the_event_calendar_importer() {
 				$post_id = wp_insert_post( $post_data );
 
 				//	Meta tags
-				if ( preg_match( "|(\d{1,2} ([a-zA-Z]+) (\d{4}))|sei", $title, $mas ) ) {
+				if ( preg_match( "|(\d{1,2} ([a-zA-Z]+) (\d{4}))|si", $title, $mas ) ) {
 					$timestamp = strtotime( $mas[0] );
 				} else {
 					$timestamp = strtotime( $oCells->get( 'B' . $iRow ) );
@@ -231,6 +233,36 @@ function the_event_calendar_importer_msg( $message, $type = "ok" ) {
 	}
 
 	return '<span style="' . $style . '">' . $message . '</span>';
+}
+/*
+ * Function to download files from a remote server using basic auth
+ * */
+function the_event_calendar_importer_download( $url ) {
+	$url_filename = basename( parse_url( $url, PHP_URL_PATH ) );
+	$tmpfname     = wp_tempnam( $url_filename );
+	$dest_file    = @fopen( $tmpfname, "w" );
+
+	$resource = curl_init();
+	curl_setopt( $resource, CURLOPT_URL, $url );
+	curl_setopt( $resource, CURLOPT_FILE, $dest_file );
+	curl_setopt( $resource, CURLOPT_HEADER, 0 );
+	curl_setopt( $resource, CURLOPT_USERPWD, "login:password" );
+	curl_setopt( $resource, CURLOPT_TIMEOUT, 30 );
+	curl_exec( $resource );
+
+	$headers = curl_getinfo( $resource );
+
+	if ( isset( $headers['http_code'] ) && $headers['http_code'] == 404 ) {
+		return new WP_Error( '404', 'File not found' );
+	}
+	if ( curl_exec( $resource ) === FALSE ) {
+		return new WP_Error( 'Err', curl_error( $resource ) );
+	}
+
+	curl_close( $resource );
+	fclose( $dest_file );
+
+	return $tmpfname;
 }
 
 ?>

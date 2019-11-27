@@ -9,6 +9,11 @@ WordPress plugin to import posts into the event calendar. Used for one-time data
 
 ## Changelog ##
 
+### v1.0.3 (11/27/2019) ###
+* Compatibility with PHP 7.3: str_replace replaced by preg_replace. Updated simplehtmldom library.
+* Added basic auth for downloading files from an external server.
+* Removed script execution time limits
+
 ### v1.0.2 (11/27/2019) ###
 * Added code to force the replacement of the domain http://wacl.info/ with https://wacl.wildpress.dev/
 
