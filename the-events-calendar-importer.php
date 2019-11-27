@@ -4,7 +4,7 @@
  * Plugin URI: https://github.com/maxvelikodnev/the_event_calendar_importer
  * Description: WordPress plugin to import posts into the event calendar. Used
  * for one-time data import (excluding verification of existing records)
- * Version: 1.0.1 Author: Max Velikodnev Author URI:
+ * Version: 1.0.2 Author: Max Velikodnev Author URI:
  * https://github.com/maxvelikodnev/ License: GNU General Public License v3.0
  * License URI: http://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -101,6 +101,7 @@ function the_event_calendar_importer() {
 				$imgs       = array_unique( $imgs );
 				$uploadPath = wp_get_upload_dir();
 				foreach ( $imgs as $k => $url ) {
+					$url = str_replace("http://wacl.info/", "https://wacl.wildpress.dev/", $url);
 					$parseUrl = parse_url( $url );
 
 					if ( isset( $parseUrl['scheme'] ) && isset( $parseUrl['host'] ) ) {
